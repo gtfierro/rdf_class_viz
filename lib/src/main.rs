@@ -1,6 +1,6 @@
 use anyhow::Result;
 use oxigraph::io::GraphFormat;
-use rdf_class_viz::{UserFilter, Visualizer};
+use rdf_class_viz::Visualizer;
 use std::env;
 use std::fs::File;
 use std::io::BufReader;
@@ -19,11 +19,9 @@ pub fn main() -> Result<()> {
     // Extract the graph filename
     let graph_filename = args.last().unwrap();
 
-    let filter = UserFilter::new(
-        r#"function filter(from, to, edge) { 
-            return edge.toLowerCase().includes('point') && (from.includes('brickschema') || to.includes('brickschema'))
-        }"#,
-    )?;
+    let filter = |from: &str, to: &str, edge: &str| {
+        return edge.contains("Point")
+    };
 
     // Create a Visualizer
     let mut v = Visualizer::new(filter)?;

@@ -1,5 +1,4 @@
 use anyhow::Result;
-use js_sandbox::Script;
 use once_cell::sync::Lazy;
 use oxigraph::io::GraphFormat;
 use oxigraph::model::*;
@@ -56,40 +55,16 @@ fn graph_to_dot(graph: &petgraph::Graph<&str, &str>, filename: &str) -> Result<(
     Ok(())
 }
 
-pub struct UserFilter {
-    vm: Script,
-}
-
-impl UserFilter {
-    pub fn new(filter: &str) -> Result<Self> {
-        let vm = Script::from_string(filter)?;
-        Ok(UserFilter { vm })
-    }
-
-    pub fn filter(&mut self, from: &str, to: &str, edge: &str) -> bool {
-        self.vm
-            .call(
-                "filter",
-                (
-                    from.to_owned().as_str(),
-                    to.to_owned().as_str(),
-                    edge.to_owned().as_str(),
-                ),
-            )
-            .unwrap()
-    }
-}
-
 pub struct Visualizer<'a> {
     store: Store,
     labels: Vec<String>,
     g: Graph<&'a str, &'a str>,
     nodes: HashMap<&'a str, NodeIndex>,
-    filter: UserFilter,
+    filter: fn(from: &str, to: &str, edge: &str) -> bool,
 }
 
 impl<'a> Visualizer<'a> {
-    pub fn new(filter: UserFilter) -> Result<Self> {
+    pub fn new(filter: fn(from: &str, to: &str, edge: &str) -> bool) -> Result<Self> {
         Ok(Visualizer {
             store: Store::new()?,
             labels: Vec::new(),
@@ -137,7 +112,7 @@ impl<'a> Visualizer<'a> {
                     let to = row.get("to").unwrap().to_string();
                     let p = row.get("p").unwrap().to_string();
 
-                    if !self.filter.filter(from.as_str(), to.as_str(), p.as_str()) {
+                    if !(self.filter)(from.as_str(), to.as_str(), p.as_str()) {
                         continue;
                     }
                 }
