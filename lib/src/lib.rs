@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use once_cell::sync::Lazy;
 use oxigraph::io::GraphFormat;
 use oxigraph::model::*;
@@ -30,46 +30,34 @@ fn rewrite_term(node: &Term) -> String {
     s.trim_matches(matches).to_owned()
 }
 
-fn graph_to_d2lang(graph: &petgraph::Graph<&str, &str>, filename: &str) -> Result<()> {
-    let mut file = File::create(filename)?;
-
-    // Write edge labels
-    for edge in graph.edge_references() {
-        let source = edge.source();
-        let target = edge.target();
-        let label = edge.weight();
-        writeln!(
-            file,
-            "{} -> {}: {}",
-            graph.node_weight(source).unwrap(),
-            graph.node_weight(target).unwrap(),
-            label
-        )?;
-    }
-
-    Ok(())
-}
 fn graph_to_dot(graph: &petgraph::Graph<&str, &str>, filename: &str) -> Result<()> {
     let mut file = File::create(filename)?;
     write!(file, "{:?}", Dot::with_config(graph, &[]))?;
     Ok(())
 }
 
+type ColorFn = fn(node: &str) -> String;
+type FilterFn = fn(from: &str, to: &str, edge: &str) -> bool;
+
 pub struct Visualizer<'a> {
     store: Store,
     labels: Vec<String>,
     g: Graph<&'a str, &'a str>,
     nodes: HashMap<&'a str, NodeIndex>,
-    filter: fn(from: &str, to: &str, edge: &str) -> bool,
+    filter: FilterFn,
+    class_color_map: HashMap<&'a str, &'a str>,
+    colors: HashMap<String, String>
 }
 
 impl<'a> Visualizer<'a> {
-    pub fn new(filter: fn(from: &str, to: &str, edge: &str) -> bool) -> Result<Self> {
+    pub fn new(filter: FilterFn, class_color_map: HashMap<&'a str, &'a str>) -> Result<Self> {
         Ok(Visualizer {
             store: Store::new()?,
             labels: Vec::new(),
             g: Graph::new(),
             nodes: HashMap::new(),
+            colors: HashMap::new(),
+            class_color_map,
             filter,
         })
     }
@@ -83,7 +71,49 @@ impl<'a> Visualizer<'a> {
         )?)
     }
 
-    pub fn create_graph(&'a mut self, data_graph: impl BufRead, format: GraphFormat) -> Result<()> {
+    pub fn graph_to_d2lang(&self) -> Result<String> {
+        let mut w = Vec::new();
+
+        // Write edge labels
+        for edge in self.g.edge_references() {
+            let source = edge.source();
+            let target = edge.target();
+            let label = edge.weight();
+            writeln!(
+                w,
+                "{} -> {}: {}",
+                self.g.node_weight(source).unwrap(),
+                self.g.node_weight(target).unwrap(),
+                label
+            )?;
+        }
+
+        // write colors
+        for (node, color) in self.colors.iter() {
+            writeln!(w, "{}.style.fill: \"{}\"", node, color)?;
+        }
+
+        Ok(String::from_utf8(w)?)
+    }
+
+    fn to_color(&'a self, node: &Term) -> Result<&'a str> {
+        for (class_name, color) in self.class_color_map.iter() {
+            let q = format!("PREFIX owl: <http://www.w3.org/2002/07/owl#>
+                     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                     ASK {{
+                        {0} (rdfs:subClassOf|owl:equivalentClass)* <{1}>
+                     }}", node, class_name);
+            if let QueryResults::Boolean(is_subclass) = self.store.query(&q)? {
+                if is_subclass {
+                    return Ok(color);
+                }
+            }
+
+        }
+        Ok("#ffffff")
+    }
+
+    pub fn create_graph(&'a mut self, data_graph: impl BufRead, format: GraphFormat) -> Result<String> {
         // load into a graph
         self.store.bulk_loader().load_graph(
             data_graph,
@@ -116,11 +146,19 @@ impl<'a> Visualizer<'a> {
                         continue;
                     }
                 }
-                let f = rewrite_term(row.get("from").unwrap());
+                let from_term = row.get("from").unwrap();
+                let f = rewrite_term(&from_term);
+                if !self.colors.contains_key(&f) {
+                    self.colors.insert(f.clone(), self.to_color(&from_term).unwrap().to_owned());
+                }
                 self.labels.push(f);
                 let f_idx = self.labels.len() - 1;
 
-                let t = rewrite_term(row.get("to").unwrap());
+                let to_term = row.get("to").unwrap();
+                let t = rewrite_term(&to_term);
+                if !self.colors.contains_key(&t) {
+                    self.colors.insert(t.clone(), self.to_color(&to_term).unwrap().to_owned());
+                }
                 self.labels.push(t);
                 let t_idx = self.labels.len() - 1;
 
@@ -146,8 +184,7 @@ impl<'a> Visualizer<'a> {
             }
         }
 
-        graph_to_d2lang(&self.g, "output.d2")?;
         graph_to_dot(&self.g, "output.dot")?;
-        Ok(())
+        self.graph_to_d2lang()
     }
 }

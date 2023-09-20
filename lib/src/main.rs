@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::collections::HashMap;
 use oxigraph::io::GraphFormat;
 use rdf_class_viz::Visualizer;
 use std::env;
@@ -23,8 +24,15 @@ pub fn main() -> Result<()> {
         return edge.contains("Point")
     };
 
+    let color_map_defn = vec![
+        ("https://brickschema.org/schema/Brick#Location", "LightCoral"),
+        ("https://brickschema.org/schema/Brick#Point", "Gold"),
+        ("https://brickschema.org/schema/Brick#Equipment", "#32BF84"),
+    ];
+    let color_map: HashMap<&str, &str> = color_map_defn.into_iter().collect();
+
     // Create a Visualizer
-    let mut v = Visualizer::new(filter)?;
+    let mut v = Visualizer::new(filter, color_map)?;
 
     // Process ontology files
     for ontology_file in &args[1..args.len() - 1] {
@@ -36,7 +44,7 @@ pub fn main() -> Result<()> {
     // Process the graph file
     let f = File::open(graph_filename)?;
     let f = BufReader::new(f);
-    v.create_graph(f, GraphFormat::Turtle)?;
+    println!("{}", v.create_graph(f, GraphFormat::Turtle)?);
 
     Ok(())
 }
