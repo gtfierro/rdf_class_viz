@@ -21,7 +21,7 @@ pub fn main() -> Result<()> {
     let graph_filename = args.last().unwrap();
 
     let filter = |from: &str, to: &str, edge: &str| {
-        return edge.contains("Point")
+        true
     };
 
     let color_map_defn = vec![

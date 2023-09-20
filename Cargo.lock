@@ -527,6 +527,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rdfviz"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "oxigraph",
+ "rdf_class_viz",
+]
+
+[[package]]
 name = "regex"
 version = "1.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
